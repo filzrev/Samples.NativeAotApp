@@ -1,0 +1,109 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-publish-nativeaot:
+    name: ${{ matrix.os }} / ${{ matrix.tfm }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            dotnet: 10.0.x
+            tfm: net10.0
+          - os: windows-11-arm
+            rid: win-arm64
+            dotnet: 10.0.x
+            tfm: net10.0
+          - os: ubuntu-latest
+            rid: linux-x64
+            dotnet: 10.0.x
+            tfm: net10.0
+          - os: ubuntu-26.04-arm
+            rid: linux-arm64
+            dotnet: 10.0.x
+            tfm: net10.0
+          - os: windows-latest
+            rid: win-x64
+            dotnet: 11.0.x
+            tfm: net11.0
+          - os: windows-11-arm
+            rid: win-arm64
+            dotnet: 11.0.x
+            tfm: net11.0
+          - os: ubuntu-latest
+            rid: linux-x64
+            dotnet: 11.0.x
+            tfm: net11.0
+          - os: ubuntu-26.04-arm
+            rid: linux-arm64
+            dotnet: 11.0.x
+            tfm: net11.0
+
+    env:
+      PUBLISH_DIR: bin/Release/${{ matrix.tfm }}/${{ matrix.rid }}/publish
+    steps:
+      - name: Show CPU information (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: systeminfo
+
+      - name: Show CPU information (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: lscpu
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET ${{ matrix.dotnet }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ matrix.dotnet }}
+
+      #- name: Install NativeAOT prerequisites (Linux)
+      #  if: runner.os == 'Linux'
+      #  run: |
+      #    sudo apt-get update
+      #    sudo apt-get install -y clang zlib1g-dev
+
+      - name: Restore
+        run: dotnet restore -p:TargetFrameworks=${{ matrix.tfm }}
+
+      - name: Build (${{ matrix.tfm }})
+        run: dotnet build -c Release --no-restore -f ${{ matrix.tfm }}
+
+      - name: Publish NativeAOT (${{ matrix.tfm }})
+        run: dotnet publish -c Release --no-restore -r ${{ matrix.rid }} -f ${{ matrix.tfm }}
+
+      - name: Run app (dotnet run)
+        run: dotnet run -c Release --no-build -f ${{ matrix.tfm }}
+
+      - name: Run NativeAOT executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe="${PUBLISH_DIR}/Samples.NativeAotApp"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            exe="${exe}.exe"
+          else
+            chmod +x "${exe}"
+          fi
+          "${exe}"
+
+      - name: Upload NativeAOT artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Samples.NativeAotApp-${{ matrix.rid }}-${{ matrix.tfm }}
+          path: ${{ env.PUBLISH_DIR }}/
+          if-no-files-found: error
